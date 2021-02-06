@@ -54,6 +54,8 @@ function check_style() {
   if ! [ -z "${matches}" ]; then
     echo "Trailing whitespace was found in the following:"
     echo "${matches}"
+    echo "help: Run following command from repository root:"
+    echo 'git grep -E -I -n "\s+$" .'
     exit 1
   fi
 }

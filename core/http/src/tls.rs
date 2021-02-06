@@ -6,12 +6,20 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use rustls::internal::pemfile;
-use rustls::{Certificate, PrivateKey, ServerConfig};
+use rustls::{PrivateKey, ServerConfig, Session};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::{TlsAcceptor, Accept, server::TlsStream};
 use tokio_rustls::rustls;
 
 use crate::listener::{Connection, Listener};
+
+pub use rustls::Certificate;
+
+/// Certificate presented by the client.
+/// This type can hold both end entity certificate and certificate
+/// from the trust chain.
+#[derive(Debug, Clone)]
+pub struct ClientCertificate(Certificate);
 
 fn load_certs(reader: &mut dyn io::BufRead) -> io::Result<Vec<Certificate>> {
     pemfile::certs(reader)
@@ -44,6 +52,15 @@ fn load_private_key(reader: &mut dyn io::BufRead) -> io::Result<PrivateKey> {
     rustls::sign::any_supported_type(&key)
         .map_err(|_| Error::new(Other, "key parsed but is unusable"))
         .map(|_| key)
+}
+
+fn load_ca_certs(ca: &mut dyn io::BufRead) -> io::Result<rustls::RootCertStore> {
+    let mut roots = rustls::RootCertStore::empty();
+    roots
+        .add_pem_file(ca)
+        .map_err(|_| io::Error::new(io::ErrorKind::Other, "bad CA certificates"))?;
+
+    Ok(roots)
 }
 
 pub struct TlsListener {
@@ -94,10 +111,12 @@ impl Listener for TlsListener {
     }
 }
 
-pub async fn bind_tls<C: io::BufRead + Send, K: io::BufRead + Send>(
+pub async fn bind_tls<C: io::BufRead + Send, K: io::BufRead + Send, M: io::BufRead + Send>(
     address: SocketAddr,
     mut cert_chain: C,
     mut private_key: K,
+    client_auth_ca: Option<M>,
+    required: bool,
 ) -> io::Result<TlsListener> {
     let cert_chain = load_certs(&mut cert_chain).map_err(|e| {
         let msg = format!("malformed TLS certificate chain: {}", e);
@@ -110,8 +129,21 @@ pub async fn bind_tls<C: io::BufRead + Send, K: io::BufRead + Send>(
     })?;
 
     let listener = TcpListener::bind(address).await?;
+    let client_auth = match client_auth_ca {
+        Some(mut client_auth_ca) => {
+            let roots = load_ca_certs(&mut client_auth_ca).map_err(|e| {
+                let msg = format!("malformed client auth certificate authority: {}", e);
+                io::Error::new(e.kind(), msg)
+            })?;
 
-    let client_auth = rustls::NoClientAuth::new();
+            if required {
+                rustls::AllowAnyAuthenticatedClient::new(roots)
+            } else {
+                rustls::AllowAnyAnonymousOrAuthenticatedClient::new(roots)
+            }
+        }
+        None => rustls::NoClientAuth::new(),
+    };
     let mut tls_config = ServerConfig::new(client_auth);
     let cache = rustls::ServerSessionMemoryCache::new(1024);
     tls_config.set_persistence(cache);
@@ -127,6 +159,60 @@ pub async fn bind_tls<C: io::BufRead + Send, K: io::BufRead + Send>(
 impl Connection for TlsStream<TcpStream> {
     fn remote_addr(&self) -> Option<SocketAddr> {
         self.get_ref().0.remote_addr()
+    }
+
+    fn peer_certificates(&self) -> Option<(ClientCertificate, Vec<ClientCertificate>)> {
+        let mut certs = (self.get_ref().1).get_peer_certificates()?;
+        if certs.is_empty() {
+            return None;
+        }
+        let end_entity = certs.remove(0);
+        Some((ClientCertificate(end_entity), certs.into_iter().map(ClientCertificate).collect()))
+    }
+}
+
+/// Client TLS.
+/// This struct contains client certificate itself and
+/// its trust chain. Additionally, several useful certificate fields
+/// are exposed for your convenience.
+#[derive(Debug)]
+pub struct ClientTls {
+    /// Client certificate provided by the user
+    pub end_entity: ClientCertificate,
+    /// Trust chain (`end_entity` refers to `chain[0]`, `chain[0]` refers to
+    /// `chain[1]` and so on; chain.last() is CA).
+    pub chain: Vec<ClientCertificate>,
+}
+
+/// Error for the [`Certificate::parse`](Certificate::parse) method.
+pub type CertificateParseError =  nom::Err<x509_parser::error::X509Error>;
+
+impl ClientCertificate {
+    /// Parses presented client certificate.
+    ///
+    /// This function ignores all data it can not understand.
+    ///
+    /// For more advanced scenarios consider using crates such as
+    /// `x509-parser` or `openssl`.
+    pub fn parse(&self) -> Result<x509_parser::certificate::X509Certificate<'_>, CertificateParseError> {
+        x509_parser::parse_x509_certificate(&self.0.0).map(|ok| ok.1)
+    }
+
+    /// Returns certificate data in DER format.
+    pub fn data(&self) -> &[u8] {
+        &self.0.0
+    }
+
+    /// Generates self-signed certificate with given SANs.
+    /// This is intended for use with local client.
+    pub fn generate<S: AsRef<str>>(subject_alternative_names: &[S]) -> ClientCertificate {
+        let sans = subject_alternative_names
+            .iter()
+            .map(|x| x.as_ref().to_string())
+            .collect::<Vec<_>>();
+        let cert = rcgen::generate_simple_self_signed(sans).unwrap();
+        let cert = cert.serialize_der().unwrap();
+        ClientCertificate(Certificate(cert))
     }
 }
 

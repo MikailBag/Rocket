@@ -123,7 +123,7 @@ mod secret_key;
 pub use config::Config;
 pub use crate::log::LogLevel;
 pub use shutdown::Shutdown;
-pub use tls::TlsConfig;
+pub use tls::{MutualTlsConfig, TlsConfig};
 
 #[cfg(feature = "secrets")]
 #[cfg_attr(nightly, doc(cfg(feature = "secrets")))]

@@ -6,6 +6,8 @@ use crate::outcome::{self, IntoOutcome};
 use crate::outcome::Outcome::*;
 
 use crate::http::{Status, ContentType, Accept, Method, CookieJar, uri::Origin};
+#[cfg(feature = "tls")]
+use crate::http::private::tls::ClientTls;
 
 /// Type alias for the `Outcome` of a `FromRequest` conversion.
 pub type Outcome<S, E> = outcome::Outcome<S, (Status, E), ()>;
@@ -491,6 +493,26 @@ impl<'r, T: FromRequest<'r>> FromRequest<'r> for Option<T> {
         match T::from_request(request).await {
             Success(val) => Success(Some(val)),
             Failure(_) | Forward(_) => Success(None),
+        }
+    }
+}
+
+
+#[cfg(feature = "tls")]
+#[crate::async_trait]
+impl<'a, 'r> FromRequest<'a, 'r> for ClientTls {
+    type Error = ();
+
+    async fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
+        // At this point we don't need to perform any validations, because
+        // invalid certificates are rejected by rustls
+        if let Some((end_entity, chain)) = request.get_peer_certificates() {
+            Success(ClientTls {
+                chain: chain.to_vec(),
+                end_entity: end_entity.clone(),
+            })
+        } else {
+            Forward(())
         }
     }
 }
