@@ -255,7 +255,10 @@ macro_rules! pub_request_impl {
     /// Please note that this certificate will not be verified again
     /// any CA configured in Rocket configuration.
     #[cfg(feature = "tls")]
-    pub fn client_certificate_with_chain(mut self, cert: ClientCertificate, chain: Vec<ClientCertificate>) -> Self {
+    pub fn client_certificate_with_chain(mut self,
+        cert: ClientCertificate,
+        chain: Vec<ClientCertificate>
+    ) -> Self {
         self._request_mut().set_peer_certificates(cert, chain);
 
         self

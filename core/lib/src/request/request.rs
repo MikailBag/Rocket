@@ -893,13 +893,19 @@ impl<'r> Request<'r> {
 
     /// Set the peer certificates
     #[cfg(feature = "tls")]
-    pub(crate) fn set_peer_certificates(&mut self, end_entity: ClientCertificate, chain: Vec<ClientCertificate>) {
+    pub(crate) fn set_peer_certificates(
+        &mut self,
+        end_entity: ClientCertificate,
+        chain: Vec<ClientCertificate>
+    ) {
         self.peer_certs = Some((end_entity, chain));
     }
 
     /// Get the peer certificates
     #[cfg(feature = "tls")]
-    pub(crate) fn get_peer_certificates(&self) -> Option<(&ClientCertificate, &[ClientCertificate])> {
+    pub(crate) fn get_peer_certificates(
+        &self
+    ) -> Option<(&ClientCertificate, &[ClientCertificate])> {
         self.peer_certs.as_ref().map(|(ee, chain)| ((ee, chain.as_slice())))
     }
 }

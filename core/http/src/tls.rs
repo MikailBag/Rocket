@@ -11,6 +11,9 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::{TlsAcceptor, Accept, server::TlsStream};
 use tokio_rustls::rustls;
 
+#[cfg(feature = "tls")]
+use x509_parser::certificate::X509Certificate;
+
 use crate::listener::{Connection, Listener};
 
 pub use rustls::Certificate;
@@ -200,7 +203,7 @@ impl ClientCertificate {
     ///
     /// For more advanced scenarios consider using crates such as
     /// `x509-parser` or `openssl`.
-    pub fn parse(&self) -> Result<x509_parser::certificate::X509Certificate<'_>, CertificateParseError> {
+    pub fn parse(&self) -> Result<X509Certificate<'_>, CertificateParseError> {
         x509_parser::parse_x509_certificate(&self.0.0).map(|ok| ok.1)
     }
 
