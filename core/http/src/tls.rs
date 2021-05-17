@@ -191,7 +191,7 @@ pub struct ClientTls {
 }
 
 /// Error for the [`Certificate::parse`](Certificate::parse) method.
-pub type CertificateParseError =  nom::Err<x509_parser::error::X509Error>;
+pub type CertificateParseError = nom::Err<x509_parser::error::X509Error>;
 
 impl ClientCertificate {
     /// Parses presented client certificate.

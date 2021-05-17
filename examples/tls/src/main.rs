@@ -31,7 +31,7 @@ fn secret(_authenticated: ClientTls) -> &'static str {
 }
 
 #[launch]
-fn rocket() -> rocket::Rocket {
+fn rocket() -> _ {
     // See `Rocket.toml` and `Cargo.toml` for TLS configuration.
-    rocket::ignite().mount("/", routes![hello, secret])
+    rocket::build().mount("/", routes![hello, secret])
 }

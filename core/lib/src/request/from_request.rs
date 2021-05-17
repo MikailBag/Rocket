@@ -500,10 +500,10 @@ impl<'r, T: FromRequest<'r>> FromRequest<'r> for Option<T> {
 
 #[cfg(feature = "tls")]
 #[crate::async_trait]
-impl<'a, 'r> FromRequest<'a, 'r> for ClientTls {
+impl<'r> FromRequest<'r> for ClientTls {
     type Error = ();
 
-    async fn from_request(request: &'a Request<'r>) -> Outcome<Self, Self::Error> {
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         // At this point we don't need to perform any validations, because
         // invalid certificates are rejected by rustls
         if let Some((end_entity, chain)) = request.get_peer_certificates() {
