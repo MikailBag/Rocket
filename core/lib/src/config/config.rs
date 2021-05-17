@@ -96,9 +96,6 @@ pub struct Config {
     /// Ignored if `tls` is None.
     /// **(default: `None`)**
     pub mutual_tls: Option<MutualTlsConfig>,
-    /// Whether `ctrl-c` initiates a server shutdown. **(default: `true`)**
-    #[serde(deserialize_with = "figment::util::bool_from_str_or_int")]
-    pub ctrlc: bool,
 }
 
 impl Default for Config {
@@ -160,7 +157,6 @@ impl Config {
             cli_colors: true,
             shutdown: Shutdown::default(),
             mutual_tls: None,
-            ctrlc: true,
         }
     }
 

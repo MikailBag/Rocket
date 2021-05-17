@@ -139,6 +139,12 @@ pub async fn bind_tls<C: io::BufRead + Send, K: io::BufRead + Send, M: io::BufRe
             if required {
                 rustls::AllowAnyAuthenticatedClient::new(roots)
             } else {
+                // TODO: in this case request with missing certificate is accepted,
+                // but request with invalid certificate is rejected.
+                // If we want to change this in future (for example we may want
+                // to accept these requests anyway and reject them on fairing
+                // or application level so that user gets nicer error), we will have to use
+                // custom ClientCertVerifier here.
                 rustls::AllowAnyAnonymousOrAuthenticatedClient::new(roots)
             }
         }
