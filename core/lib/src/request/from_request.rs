@@ -501,7 +501,7 @@ impl<'r, T: FromRequest<'r>> FromRequest<'r> for Option<T> {
 #[cfg(feature = "tls")]
 #[crate::async_trait]
 impl<'r> FromRequest<'r> for ClientTls {
-    type Error = ();
+    type Error = std::convert::Infallible;
 
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         // At this point we don't need to perform any validations, because
