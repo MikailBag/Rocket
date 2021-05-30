@@ -17,6 +17,9 @@ use crate::http::private::{Listener, Connection, Incoming};
 use crate::http::uri::Origin;
 use crate::http::private::bind_tcp;
 
+#[cfg(feature = "tls")]
+use crate::http::tls::ClientCertificate;
+
 // A token returned to force the execution of one method before another.
 pub(crate) struct RequestToken;
 
@@ -64,6 +67,8 @@ async fn hyper_service_fn(
     rocket: Arc<Rocket<Orbit>>,
     h_addr: std::net::SocketAddr,
     hyp_req: hyper::Request<hyper::Body>,
+    #[cfg(feature = "tls")] certs: Option<(ClientCertificate, Vec<ClientCertificate>)>,
+    #[cfg(not(feature = "tls"))] _certs: (),
 ) -> Result<hyper::Response<hyper::Body>, io::Error> {
     // This future must return a hyper::Response, but the response body might
     // borrow from the request. Instead, write the body in another future that
@@ -92,6 +97,11 @@ async fn hyper_service_fn(
                 return rocket.send_response(r, tx).await;
             }
         };
+
+        #[cfg(feature = "tls")]
+        if let Some((end_entity, chain)) = certs {
+            req.set_peer_certificates(end_entity, chain);
+        }
 
         // Retrieve the data from the hyper body.
         let mut data = Data::from(h_body);
@@ -374,7 +384,17 @@ impl Rocket<Orbit> {
             use crate::http::private::tls::bind_tls;
 
             let (certs, key) = config.to_readers().map_err(ErrorKind::Io)?;
-            let l = bind_tls(addr, certs, key).await.map_err(ErrorKind::Bind)?;
+
+            let (ca, required) = if let Some(conf) = self.config.mutual_tls.as_ref() {
+                (
+                    Some(conf.to_reader().map_err(ErrorKind::Io)?),
+                    conf.required,
+                )
+            } else {
+                (None, false)
+            };
+
+            let l = bind_tls(addr, certs, key, ca, required).await.map_err(ErrorKind::Bind)?;
             addr = l.local_addr().unwrap_or(addr);
             self.config.address = addr.ip();
             self.config.port = addr.port();
@@ -414,9 +434,13 @@ impl Rocket<Orbit> {
         let service_fn = move |conn: &CancellableIo<_, L::Connection>| {
             let rocket = rocket.clone();
             let remote = conn.remote_addr().unwrap_or_else(|| ([0, 0, 0, 0], 0).into());
+            #[cfg(feature = "tls")]
+            let certs = conn.peer_certificates();
+            #[cfg(not(feature = "tls"))]
+            let certs = ();
             async move {
                 Ok::<_, std::convert::Infallible>(hyper::service_fn(move |req| {
-                    hyper_service_fn(rocket.clone(), remote, req)
+                    hyper_service_fn(rocket.clone(), remote, req, certs.clone())
                 }))
             }
         };

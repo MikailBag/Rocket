@@ -124,29 +124,113 @@ impl TlsConfig {
 }
 
 #[cfg(feature = "tls")]
+impl TlsConfig {
+    pub(crate) fn to_readers(&self) -> std::io::Result<(Reader, Reader)> {
+        Ok((to_reader(&self.certs)?, to_reader(&self.key)?))
+    }
+}
+
+#[derive(PartialEq, Debug, Clone, Deserialize, Serialize)]
+pub struct MutualTlsConfig {
+    /// Path or raw bytes for the DER-encoded certificate authority
+    pub(crate) ca: Either<RelativePathBuf, Vec<u8>>,
+    /// Reject connections without client auth
+    pub(crate) required: bool,
+}
+
+impl MutualTlsConfig {
+    /// Constructs a `MutualTlsConfig` from paths to a `ca` certificate authority
+    /// This method does no validation; it simply creates a
+    /// structure suitable for passing into a [`Config`](crate::Config).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use rocket::config::MutualTlsConfig;
+    ///
+    /// let mtls_config = MutualTlsConfig::from_path("/ssl/client-ca.pem", true);
+    /// ```
+    pub fn from_path<C>(ca: C, required: bool) -> Self
+    where
+        C: AsRef<std::path::Path>,
+    {
+        MutualTlsConfig {
+            ca: Either::Left(ca.as_ref().to_path_buf().into()),
+            required,
+        }
+    }
+
+    /// Constructs a `MutualTlsConfig` from byte buffer to a `ca`
+    /// certificate authority. This method does no validation;
+    /// it simply creates a structure suitable for passing into a
+    /// [`Config`](crate::Config).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use rocket::config::MutualTlsConfig;
+    ///
+    /// # let ca_buf = &[];
+    /// let tls_config = MutualTlsConfig::from_bytes(ca_buf, false);
+    /// ```
+    pub fn from_bytes(ca: &[u8], required: bool) -> Self {
+        MutualTlsConfig {
+            ca: Either::Right(ca.to_vec().into()),
+            required,
+        }
+    }
+
+    /// Returns the value of the `ca` parameter.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use rocket::figment::Figment;
+    /// let figment = Figment::from(rocket::Config::default())
+    ///     .merge(("mutual_tls.ca", vec![0; 32]))
+    ///     .merge(("mutual_tls.required", false));
+    ///
+    /// let config = rocket::Config::from(figment);
+    /// let mtls_config = config.mutual_tls.as_ref().unwrap();
+    /// let cert_bytes = mtls_config.ca().right().unwrap();
+    /// assert!(cert_bytes.iter().all(|&b| b == 0));
+    /// ```
+    pub fn ca(&self) -> either::Either<std::path::PathBuf, &[u8]> {
+        match &self.ca {
+            Either::Left(path) => either::Either::Left(path.relative()),
+            Either::Right(bytes) => either::Either::Right(&bytes),
+        }
+    }
+}
+
+#[cfg(feature = "tls")]
+impl MutualTlsConfig {
+    pub(crate) fn to_reader(&self) -> std::io::Result<Reader> {
+        Ok(to_reader(&self.ca)?)
+    }
+}
+
+#[cfg(feature = "tls")]
 type Reader = Box<dyn std::io::BufRead + Sync + Send>;
 
 #[cfg(feature = "tls")]
-impl TlsConfig {
-    pub(crate) fn to_readers(&self) -> std::io::Result<(Reader, Reader)> {
-        use std::{io::{self, Error}, fs};
-        use yansi::Paint;
+fn to_reader(value: &Either<RelativePathBuf, Vec<u8>>) -> std::io::Result<Reader> {
+    match value {
+        Either::Left(path) => {
+            let path = path.relative();
+            let file = std::fs::File::open(&path).map_err(move |e| {
+                std::io::Error::new(
+                    e.kind(),
+                    format!(
+                        "error reading TLS file `{}`: {}",
+                        yansi::Paint::white(figment::Source::File(path)),
+                        e
+                    ),
+                )
+            })?;
 
-        fn to_reader(value: &Either<RelativePathBuf, Vec<u8>>) -> io::Result<Reader> {
-            match value {
-                Either::Left(path) => {
-                    let path = path.relative();
-                    let file = fs::File::open(&path).map_err(move |e| {
-                        Error::new(e.kind(), format!("error reading TLS file `{}`: {}",
-                                Paint::white(figment::Source::File(path)), e))
-                    })?;
-
-                    Ok(Box::new(io::BufReader::new(file)))
-                }
-                Either::Right(vec) => Ok(Box::new(io::Cursor::new(vec.clone()))),
-            }
+            Ok(Box::new(std::io::BufReader::new(file)))
         }
-
-        Ok((to_reader(&self.certs)?, to_reader(&self.key)?))
+        Either::Right(vec) => Ok(Box::new(std::io::Cursor::new(vec.clone()))),
     }
 }
