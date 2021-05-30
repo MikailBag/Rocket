@@ -1,3 +1,5 @@
+mod parse;
+
 use std::io;
 use std::future::Future;
 use std::net::SocketAddr;
@@ -11,12 +13,12 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::{TlsAcceptor, Accept, server::TlsStream};
 use tokio_rustls::rustls;
 
-#[cfg(feature = "tls")]
-use x509_parser::certificate::X509Certificate;
 
 use crate::listener::{Connection, Listener};
 
 pub use rustls::Certificate;
+#[cfg(feature = "tls")]
+pub use parse::{CertificateFields, CertificateParseError};
 
 /// Certificate presented by the client.
 /// This type can hold both end entity certificate and certificate
@@ -193,20 +195,8 @@ pub struct ClientTls {
     pub chain: Vec<ClientCertificate>,
 }
 
-/// Error for the [`Certificate::parse`](Certificate::parse) method.
-pub type CertificateParseError = nom::Err<x509_parser::error::X509Error>;
 
 impl ClientCertificate {
-    /// Parses presented client certificate.
-    ///
-    /// This function ignores all data it can not understand.
-    ///
-    /// For more advanced scenarios consider using crates such as
-    /// `x509-parser` or `openssl`.
-    pub fn parse(&self) -> Result<X509Certificate<'_>, CertificateParseError> {
-        x509_parser::parse_x509_certificate(&self.0.0).map(|ok| ok.1)
-    }
-
     /// Returns certificate data in DER format.
     pub fn data(&self) -> &[u8] {
         &self.0.0

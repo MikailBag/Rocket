@@ -24,7 +24,7 @@ fn get_index_with_auth() {
     let response = client.get("/").client_certificate(get_cert()).dispatch();
     assert_eq!(
         response.into_string(),
-        Some("Hello, [DNSName(\"mary\")]".into())
+        Some("Hello, [\"rcgen self signed cert\"] []".into())
     );
 }
 

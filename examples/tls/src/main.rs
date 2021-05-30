@@ -12,15 +12,11 @@ fn hello(auth: Option<ClientTls>) -> Cow<'static, str> {
     match auth {
         None => "Hello, anonymous user".into(),
         Some(info) => {
-            let tbs = match info.end_entity.parse() {
-                Ok(t) => t.tbs_certificate,
+            let fields = match info.end_entity.parse() {
+                Ok(t) => t,
                 Err(err) => return format!("I did not understand your certificate: {}", err).into()
             };
-            let san = tbs
-                .subject_alternative_name()
-                .map(|(_, sans)| sans.general_names.as_slice())
-                .unwrap_or(&[]);
-            format!("Hello, {:?}", san).into()
+            format!("Hello, {:?} {:?}", fields.common_names, fields.organisation_units).into()
         }
     }
 }
